@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>チワワのおねだり大作戦</title>
+    <style>
+        :root {
+            --main-bg: #ffebee;
+            --accent: #ff4081;
+            --chiwa-size: 80px;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: var(--main-bg);
+            font-family: 'Hiragino Sans', 'Meiryo', sans-serif;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #game-board {
+            position: relative;
+            width: 100vw;
+            max-width: 500px;
+            height: 80vh;
+            background: linear-gradient(to bottom, #a1c4fd 0%, #c2e9fb 100%);
+            border: 8px solid #fff;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            overflow: hidden;
+            cursor: none;
+        }
+
+        /* 芝生 */
+        .grass {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 20px;
+            background-color: #8bc34a;
+        }
+
+        #chihuahua {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            width: var(--chiwa-size);
+            height: var(--chiwa-size);
+            font-size: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transform: translateX(-50%);
+            z-index: 10;
+            filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.2));
+            user-select: none;
+        }
+
+        .item {
+            position: absolute;
+            font-size: 35px;
+            z-index: 5;
+            user-select: none;
+        }
+
+        #ui {
+            width: 100%;
+            max-width: 500px;
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 20px;
+            box-sizing: border-box;
+            font-weight: bold;
+            color: #d81b60;
+            font-size: 20px;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        h1 { color: var(--accent); margin-bottom: 10px; }
+        
+        button {
+            padding: 15px 40px;
+            font-size: 22px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(255, 64, 129, 0.4);
+            transition: transform 0.2s;
+        }
+
+        button:active { transform: scale(0.95); }
+
+        .high-score {
+            margin-top: 15px;
+            font-size: 16px;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <div>おやつ: <span id="score">0</span></div>
+        <div>ハイスコア: <span id="best">0</span></div>
+    </div>
+
+    <div id="game-board">
+        <div id="chihuahua">🐶</div>
+        <div class="grass"></div>
+        
+        <div id="overlay">
+            <h1>うるうるチワワ</h1>
+            <p>ピーマン🫑をよけて<br>大好きなおやつを集めよう！</p>
+            <div style="font-size: 40px; margin: 20px;">🦴 🍖 🍰</div>
+            <button onclick="startGame()">スタート！</button>
+            <div class="high-score">最高記録: <span id="overlay-best">0</span></div>
+        </div>
+    </div>
+
+    <script>
+        const board = document.getElementById('game-board');
+        const chiwa = document.getElementById('chihuahua');
+        const scoreDisplay = document.getElementById('score');
+        const bestDisplay = document.getElementById('best');
+        const overlayBest = document.getElementById('overlay-best');
+        const overlay = document.getElementById('overlay');
+
+        let score = 0;
+        let bestScore = localStorage.getItem('chiwaBest') || 0;
+        let gameActive = false;
+        let gameSpeed = 3;
+        let spawnRate = 1000;
+        let animationId;
+
+        bestDisplay.innerText = bestScore;
+        overlayBest.innerText = bestScore;
+
+        // チワワの移動
+        function moveChiwa(e) {
+            if (!gameActive) return;
+            const rect = board.getBoundingClientRect();
+            let x;
+            if (e.type === 'mousemove') {
+                x = e.clientX - rect.left;
+            } else if (e.type === 'touchmove') {
+                x = e.touches[0].clientX - rect.left;
+            }
+            
+            // 範囲制限
+            const halfWidth = chiwa.offsetWidth / 2;
+            if (x < halfWidth) x = halfWidth;
+            if (x > rect.width - halfWidth) x = rect.width - halfWidth;
+            
+            chiwa.style.left = x + 'px';
+        }
+
+        board.addEventListener('mousemove', moveChiwa);
+        board.addEventListener('touchmove', moveChiwa);
+
+        function startGame() {
+            score = 0;
+            gameSpeed = 3;
+            spawnRate = 1000;
+            scoreDisplay.innerText = score;
+            gameActive = true;
+            overlay.style.display = 'none';
+            
+            // 既存のアイテムを削除
+            document.querySelectorAll('.item').forEach(el => el.remove());
+            
+            spawnLoop();
+            update();
+        }
+
+        function spawnLoop() {
+            if (!gameActive) return;
+
+            const item = document.createElement('div');
+            item.className = 'item';
+            
+            // アイテムの種類（おやつ vs ピーマン）
+            const rand = Math.random();
+            if (rand < 0.2) {
+                item.innerHTML = '🫑'; // ピーマン
+                item.dataset.type = 'bad';
+            } else {
+                const snacks = ['🦴', '🍖', '🍰', '🍪', '🥓'];
+                item.innerHTML = snacks[Math.floor(Math.random() * snacks.length)];
+                item.dataset.type = 'good';
+            }
+
+            item.style.left = Math.random() * (board.clientWidth - 40) + 'px';
+            item.style.top = '-50px';
+            board.appendChild(item);
+
+            // スコアが上がるほど難易度アップ
+            let nextSpawn = Math.max(300, spawnRate - (score * 2));
+            setTimeout(spawnLoop, nextSpawn);
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            const items = document.querySelectorAll('.item');
+            const chiwaRect = chiwa.getBoundingClientRect();
+
+            items.forEach(item => {
+                let top = parseFloat(item.style.top);
+                top += gameSpeed + (score / 100); // 徐々に加速
+                item.style.top = top + 'px';
+
+                const itemRect = item.getBoundingClientRect();
+
+                // 当たり判定
+                if (isColliding(chiwaRect, itemRect)) {
+                    if (item.dataset.type === 'good') {
+                        score += 10;
+                        scoreDisplay.innerText = score;
+                        item.remove();
+                        // 食べた時のリアクション
+                        chiwa.innerHTML = '😋';
+                        setTimeout(() => { if(gameActive) chiwa.innerHTML = '🐶'; }, 300);
+                    } else {
+                        gameOver();
+                    }
+                }
+
+                // 画面外に出たら削除
+                if (top > board.clientHeight) {
+                    item.remove();
+                }
+            });
+
+            animationId = requestAnimationFrame(update);
+        }
+
+        function isColliding(r1, r2) {
+            // 当たり判定を少し甘く（小さく）する
+            return !(r1.right - 15 < r2.left + 5 || 
+                     r1.left + 15 > r2.right - 5 || 
+                     r1.bottom - 15 < r2.top + 5 || 
+                     r1.top + 15 > r2.bottom - 5);
+        }
+
+        function gameOver() {
+            gameActive = false;
+            cancelAnimationFrame(animationId);
+            chiwa.innerHTML = '😭';
+            
+            if (score > bestScore) {
+                bestScore = score;
+                localStorage.setItem('chiwaBest', bestScore);
+                bestDisplay.innerText = bestScore;
+                overlayBest.innerText = bestScore;
+            }
+
+            setTimeout(() => {
+                overlay.querySelector('h1').innerText = "ゲームオーバー！";
+                overlay.querySelector('p').innerHTML = `スコア: ${score}<br>チワワがピーマンを食べちゃった...`;
+                overlay.style.display = 'flex';
+            }, 500);
+        }
+    </script>
+</body>
+</html>
